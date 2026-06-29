@@ -1,0 +1,6 @@
+{
+  "name": "Premium AI Agency SaaS",
+  "description": "A modern, premium, fully responsive SaaS website for an AI-powered creative agency, featuring an interactive booking system, dynamic billing flow, editable CMS content, and an integrated server-side Gemini AI agent.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
