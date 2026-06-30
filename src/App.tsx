@@ -618,9 +618,80 @@ export default function App() {
               calendarEventId = calData.eventId;
               meetingLink = calData.meetLink;
               console.log("[Google Calendar] Scheduled successfully:", calData);
+
+              // 3. Immediately after a successful calendar creation, call: POST /api/send-email
+              const emailPayload = {
+                email: bookingPayload.email,
+                name: bookingPayload.name,
+                type: "booking_confirmation",
+                customerName: bookingPayload.name,
+                customerEmail: bookingPayload.email,
+                meetingDate: bookingPayload.date,
+                meetingTime: bookingPayload.time,
+                duration: 45,
+                googleMeetLink: meetingLink,
+                serviceName: bookingPayload.serviceRequired,
+                details: {
+                  date: bookingPayload.date,
+                  time: bookingPayload.time,
+                  timezone: bookingPayload.timezone,
+                  service: bookingPayload.serviceRequired,
+                  meetLink: meetingLink,
+                }
+              };
+
+              console.log("[Email Service] BEFORE calling /api/send-email with payload:", emailPayload);
+
+              try {
+                const emailRes = await fetch("/api/send-email", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify(emailPayload)
+                });
+
+                if (emailRes.ok) {
+                  const emailData = await emailRes.json();
+                  console.log("[Email Service] AFTER successful response from /api/send-email:", emailData);
+                } else {
+                  const errorText = await emailRes.text();
+                  console.error("[Email Service] ON failure calling /api/send-email (Non-OK status response):", errorText);
+                }
+              } catch (emailErr) {
+                console.error("[Email Service] ON failure calling /api/send-email (Exception):", emailErr);
+              }
+
+              // Also trigger Admin notice email immediately
+              try {
+                await fetch("/api/send-email", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    email: "tanishkchandak45@gmail.com",
+                    name: "Admin",
+                    type: "admin_notification",
+                    customerName: bookingPayload.name,
+                    customerEmail: bookingPayload.email,
+                    meetingDate: bookingPayload.date,
+                    meetingTime: bookingPayload.time,
+                    duration: 45,
+                    googleMeetLink: meetingLink,
+                    serviceName: bookingPayload.serviceRequired,
+                    details: {
+                      eventType: "New Booking Lock",
+                      clientName: bookingPayload.name,
+                      clientEmail: bookingPayload.email,
+                      summary: `Consultation reserved for ${bookingPayload.date} at ${bookingPayload.time}. Meet link generated: ${meetingLink || "Pending"}.`
+                    }
+                  })
+                });
+              } catch (adminMailErr) {
+                console.warn("[Email Service] Failed to dispatch Admin notice email:", adminMailErr);
+              }
+            } else {
+              console.warn("[Google Calendar] API returned non-OK status code:", calRes.status);
             }
           } catch (calErr) {
-            console.warn("Could not schedule calendar event securely:", calErr);
+            console.error("[Google Calendar] ON failure scheduling calendar event securely:", calErr);
           }
 
           // 3. Insert booking referencing the users.id
@@ -652,45 +723,6 @@ export default function App() {
           } else {
             console.log("[Supabase Client] Booking successfully synced client-side.");
             supabaseSynced = true;
-
-            // Trigger Resend notification securely via serverless email API
-            try {
-              await fetch("/api/send-email", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  email: bookingPayload.email,
-                  name: bookingPayload.name,
-                  type: "booking_confirmation",
-                  details: {
-                    date: bookingPayload.date,
-                    time: bookingPayload.time,
-                    timezone: bookingPayload.timezone,
-                    service: bookingPayload.serviceRequired,
-                    meetLink: meetingLink,
-                  }
-                })
-              });
-
-              // Also trigger Admin notice email
-              await fetch("/api/send-email", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  email: "tanishkchandak45@gmail.com",
-                  name: "Admin",
-                  type: "admin_notification",
-                  details: {
-                    eventType: "New Booking Lock",
-                    clientName: bookingPayload.name,
-                    clientEmail: bookingPayload.email,
-                    summary: `Consultation reserved for ${bookingPayload.date} at ${bookingPayload.time}. Meet link generated: ${meetingLink || "Pending"}.`
-                  }
-                })
-              });
-            } catch (mailErr) {
-              console.warn("Failed to dispatch Resend booking emails:", mailErr);
-            }
           }
         } catch (supabaseErr) {
           console.error("[Supabase Client] Failed to connect/insert:", supabaseErr);
