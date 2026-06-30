@@ -269,7 +269,7 @@ export default async function handler(req: any, res: any) {
       `;
     }
 
-    const { data: resendResult, error: resendError } = await resend.emails.send({
+    let { data: resendResult, error: resendError } = await resend.emails.send({
       from: "Veloce AI <onboarding@resend.dev>", // Default sandbox verified email
       to: email,
       subject: subject,
@@ -277,7 +277,46 @@ export default async function handler(req: any, res: any) {
     });
 
     if (resendError) {
-      console.error("[Resend Delivery Error]:", resendError);
+      console.warn(`[Resend Delivery Error] Initial send to ${email} failed:`, resendError);
+      
+      const errMsg = resendError.message?.toLowerCase() || "";
+      const isSandboxError = errMsg.includes("sandbox") || 
+                             errMsg.includes("verify") ||
+                             errMsg.includes("restriction") ||
+                             errMsg.includes("not allowed") ||
+                             errMsg.includes("unverified");
+
+      const adminEmail = "tanishkchandak45@gmail.com";
+
+      if (isSandboxError && email !== adminEmail) {
+        console.log(`[Resend Sandbox Redirection] Retrying delivery to verified developer email: ${adminEmail}`);
+        
+        const warningBanner = `
+          <div style="background-color: #ffedd5; border: 1px solid #f97316; color: #c2410c; padding: 16px; font-size: 13px; font-family: sans-serif; text-align: left; margin: 15px auto; border-radius: 8px; max-width: 560px; line-height: 1.5;">
+            <strong>Sandbox Delivery Note:</strong> This email was redirected to you because the recipient email (<strong>${email}</strong>) is not verified in your Resend Sandbox. Use this redirected copy to verify formatting and delivery success.
+          </div>
+        `;
+        const modifiedHtml = htmlContent.replace(`<div style="${containerStyle}">`, `<div style="${containerStyle}">${warningBanner}`);
+
+        const retryResult = await resend.emails.send({
+          from: "Veloce AI <onboarding@resend.dev>",
+          to: adminEmail,
+          subject: `[Redirected] ${subject}`,
+          html: modifiedHtml,
+        });
+
+        if (!retryResult.error) {
+          return res.status(200).json({
+            success: true,
+            isSimulated: false,
+            message: `Resend sandbox redirection completed successfully. Email sent to ${adminEmail}`,
+            data: retryResult.data,
+          });
+        } else {
+          console.error("[Resend Sandbox Redirection Failed]:", retryResult.error);
+        }
+      }
+      
       return res.status(400).json({ success: false, error: resendError });
     }
 

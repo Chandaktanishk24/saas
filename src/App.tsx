@@ -316,8 +316,60 @@ export default function App() {
       }
     });
 
+    // Google OAuth listener for Popup-based logins
+    const handleOAuthMessage = async (event: MessageEvent) => {
+      const origin = event.origin;
+      if (!origin.endsWith('.run.app') && !origin.includes('localhost')) {
+        return;
+      }
+      if (event.data?.type === 'SUPABASE_OAUTH_SUCCESS') {
+        const { search } = event.data;
+        const searchParams = new URLSearchParams(search);
+        const code = searchParams.get('code');
+        if (code) {
+          try {
+            const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+            if (error) throw error;
+            if (data?.session) {
+              const session = data.session;
+              const defaultRole = session.user.email === "tanishkchandak45@gmail.com" || session.user.email === "tanishktanishkchandak45@gmail.com" || session.user.email?.includes("admin") ? "ADMIN" : "CLIENT";
+              const userProfile = {
+                id: session.user.id,
+                name: session.user.user_metadata?.full_name || session.user.email || "",
+                email: session.user.email || "",
+                role: session.user.user_metadata?.role || defaultRole,
+              };
+              setUser(userProfile);
+              setToken(session.access_token);
+              localStorage.setItem("veloce_user", JSON.stringify(userProfile));
+              localStorage.setItem("veloce_token", session.access_token);
+              
+              // Upsert details to public.users table
+              try {
+                await supabase.from("users").upsert({
+                  id: session.user.id,
+                  full_name: userProfile.name,
+                  email: userProfile.email,
+                });
+              } catch (dbErr) {
+                console.warn("[AuthPage] Failed to register user profile into users table:", dbErr);
+              }
+              
+              setActiveView(userProfile.role === "ADMIN" ? "admin" : "client");
+              triggerToast(`Welcome, ${userProfile.name}! Logged in with Google successfully.`, "success");
+            }
+          } catch (err: any) {
+            console.error("Failed to exchange code for session:", err);
+            triggerToast(err.message || "Failed to exchange Google credentials.", "error");
+          }
+        }
+      }
+    };
+    window.addEventListener('message', handleOAuthMessage);
+
     return () => {
       subscription.unsubscribe();
+      window.removeEventListener('message', handleOAuthMessage);
     };
   }, []);
 
@@ -473,13 +525,22 @@ export default function App() {
     if (!newsletterEmail) return;
     try {
       if (isSupabaseConfigured()) {
-        const { error } = await supabase.from("newsletters").insert([
+        const { error } = await supabase.from("newsletters").upsert(
           {
             email: newsletterEmail,
             active: true,
+          },
+          { onConflict: 'email' }
+        );
+        if (error) {
+          if (error.message && error.message.toLowerCase().includes("could not find the table")) {
+            throw new Error(
+              "The 'newsletters' table is missing in your Supabase database. " +
+              "Please make sure to run the SQL migrations located in your supabase/migrations folder using your Supabase SQL Editor."
+            );
           }
-        ]);
-        if (error) throw error;
+          throw error;
+        }
       }
       setNewsletterSuccess(true);
       triggerToast("Welcome to our insights briefing!", "success");
@@ -723,11 +784,27 @@ export default function App() {
         clearInterval(interval);
         
         try {
+          const razorpayPaymentId = `pay_sim_${Date.now().toString().slice(-6)}`;
+
+          // Verify signature server-side before marking payment as successful
+          const verifyRes = await fetch("/api/verify-signature", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              razorpayOrderId: razorpayOrderId,
+              razorpayPaymentId: razorpayPaymentId,
+              razorpaySignature: "simulated_signature_hash_123456",
+            }),
+          });
+          const verifyData = await verifyRes.json();
+          if (!verifyRes.ok || !verifyData.success) {
+            throw new Error(verifyData.error || "Payment signature verification failed.");
+          }
+
           // Generate client-side invoice and sync with Supabase
           const { base, discount, net, gst, total } = getPricingCalculations(selectedPlan);
           const invoiceNumber = `INV-RZP-${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 900 + 100)}`;
           const invoiceDate = new Date().toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" });
-          const razorpayPaymentId = `pay_sim_${Date.now().toString().slice(-6)}`;
 
           const mockInvoice = {
             success: true,
@@ -897,12 +974,240 @@ export default function App() {
     const invoiceDate = new Date().toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" });
 
     if (paymentGateway === "Razorpay") {
-      // Bypasses backend order generation and triggers the Razorpay Simulated Sandbox mode directly
-      const simulatedOrderId = `order_sim_${Date.now().toString().slice(-6)}_${Math.floor(Math.random() * 900 + 100)}`;
-      setRazorpayOrderId(simulatedOrderId);
-      setRazorpaySimStep("method");
-      setCheckoutStep("razorpay_sim_form");
-      triggerToast("Loaded Razorpay Sandbox Simulation.", "info");
+      try {
+        triggerToast("Initializing Razorpay checkout...", "info");
+        const orderRes = await fetch("/api/create-order", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            amount: total,
+            planName: selectedPlan.name,
+          }),
+        });
+        if (!orderRes.ok) {
+          throw new Error("Failed to create Razorpay order on the backend.");
+        }
+        const orderData = await orderRes.json();
+        
+        if (orderData.isSimulated || !orderData.id) {
+          // Fall back to simulator form
+          const orderId = orderData.id || `order_sim_${Date.now().toString().slice(-6)}`;
+          setRazorpayOrderId(orderId);
+          setRazorpaySimStep("method");
+          setCheckoutStep("razorpay_sim_form");
+          triggerToast("Loaded Razorpay Sandbox Simulation.", "info");
+          return;
+        }
+
+        // Live Razorpay mode! Check if window.Razorpay exists
+        if (!(window as any).Razorpay) {
+          throw new Error("Razorpay SDK was not loaded. Please try again.");
+        }
+
+        const options = {
+          key: orderData.keyId || "",
+          amount: orderData.amount,
+          currency: orderData.currency || "INR",
+          name: "Veloce AI",
+          description: `Strategic Delivery Program — ${selectedPlan.name}`,
+          order_id: orderData.id,
+          handler: async function (response: any) {
+            try {
+              triggerToast("Verifying payment signature securely...", "info");
+              const verifyRes = await fetch("/api/verify-signature", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  razorpayOrderId: response.razorpay_order_id,
+                  razorpayPaymentId: response.razorpay_payment_id,
+                  razorpaySignature: response.razorpay_signature,
+                }),
+              });
+              const verifyData = await verifyRes.json();
+              if (!verifyRes.ok || !verifyData.success) {
+                throw new Error(verifyData.error || "Payment verification failed.");
+              }
+
+              // Payment success! Proceed to sync with database
+              const razorpayPaymentId = response.razorpay_payment_id;
+              const razorpayOrderId = response.razorpay_order_id;
+              const razorpaySignature = response.razorpay_signature;
+
+              const mockInvoice = {
+                success: true,
+                invoiceNumber,
+                invoiceDate,
+                planName: selectedPlan.name,
+                paymentMethod: "Razorpay",
+                gstNumber: gstNumber || "Not Provided",
+                billingDetails: billingDetailsForm,
+                originalAmount: base,
+                discount,
+                netAmount: net,
+                gstAmount: gst,
+                totalAmount: total,
+                razorpayPaymentId,
+                message: `Payment of ₹${total.toLocaleString("en-IN")} via Razorpay was authorized successfully. Transaction verification completed securely.`,
+              };
+
+              if (isSupabaseConfigured()) {
+                try {
+                  // 1. Create or select user
+                  let dbUserId = user ? user.id : null;
+                  if (!dbUserId) {
+                    const { data: userSelect } = await supabase.from("users").select("id").eq("email", billingDetailsForm.email).limit(1);
+                    if (userSelect && userSelect.length > 0) {
+                      dbUserId = userSelect[0].id;
+                    } else {
+                      const { data: newUser } = await supabase.from("users").insert([{
+                        full_name: billingDetailsForm.name,
+                        email: billingDetailsForm.email,
+                        phone: billingDetailsForm.phone || "Not Provided",
+                        company: "Personal Brand",
+                      }]).select("id").single();
+                      if (newUser) dbUserId = newUser.id;
+                    }
+                  }
+
+                  // 2. Insert order
+                  const { data: newOrder } = await supabase.from("orders").insert([{
+                    plan_name: selectedPlan.name,
+                    amount: total,
+                    status: "COMPLETED",
+                    coupon_code: couponCode || null,
+                    billing_name: billingDetailsForm.name,
+                    billing_email: billingDetailsForm.email,
+                    billing_address: billingDetailsForm.address || null,
+                    gst_number: gstNumber || null,
+                    razorpay_order_id: razorpayOrderId,
+                    invoice_id: invoiceNumber,
+                    user_id: dbUserId,
+                  }]).select("id").single();
+
+                  // 3. Insert payment
+                  await supabase.from("payments").insert([{
+                    razorpay_payment_id: razorpayPaymentId,
+                    razorpay_order_id: razorpayOrderId,
+                    razorpay_signature: razorpaySignature,
+                    amount: total,
+                    currency: "INR",
+                    status: "captured",
+                    payment_method: "Razorpay",
+                    user_id: dbUserId,
+                  }]);
+
+                  // 4. Insert invoice
+                  if (newOrder) {
+                    await supabase.from("invoices").insert([{
+                      invoice_number: invoiceNumber,
+                      invoice_date: invoiceDate,
+                      original_amount: base,
+                      discount: discount,
+                      net_amount: net,
+                      gst_amount: gst,
+                      total_amount: total,
+                      status: "PAID",
+                      order_id: newOrder.id,
+                    }]);
+                  }
+
+                  // 5. Send emails
+                  try {
+                    await fetch("/api/send-email", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        email: billingDetailsForm.email,
+                        name: billingDetailsForm.name,
+                        type: "payment_success",
+                        details: {
+                          planName: selectedPlan.name,
+                          paymentId: razorpayPaymentId,
+                          invoiceId: invoiceNumber,
+                          amount: total,
+                          dashboardUrl: window.location.origin,
+                        }
+                      })
+                    });
+
+                    await fetch("/api/send-email", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        email: billingDetailsForm.email,
+                        name: billingDetailsForm.name,
+                        type: "invoice",
+                        details: {
+                          planName: selectedPlan.name,
+                          originalAmount: base,
+                          discount,
+                          gstAmount: gst,
+                          totalAmount: total,
+                          billingName: billingDetailsForm.name,
+                          gstNumber: gstNumber || "Not Provided",
+                          invoiceNumber,
+                          invoiceDate,
+                        }
+                      })
+                    });
+
+                    await fetch("/api/send-email", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        email: "tanishkchandak45@gmail.com",
+                        name: "Admin",
+                        type: "admin_notification",
+                        details: {
+                          eventType: "New Payment Captured",
+                          clientName: billingDetailsForm.name,
+                          clientEmail: billingDetailsForm.email,
+                          summary: `SaaS Order completed for the ${selectedPlan.name} program. Amount: ₹${total.toLocaleString("en-IN")}. Transaction ID: ${razorpayPaymentId}.`
+                        }
+                      })
+                    });
+                  } catch (mailErr) {
+                    console.warn("Failed to dispatch Resend payment emails:", mailErr);
+                  }
+                } catch (supaErr) {
+                  console.warn("Could not insert billing data directly to Supabase:", supaErr);
+                }
+              }
+
+              setCheckoutInvoice(mockInvoice);
+              setCheckoutStep("success");
+              triggerToast("Payment completed successfully! Invoice written to DB.", "success");
+            } catch (err: any) {
+              setCheckoutStep("failed");
+              triggerToast(err.message || "Payment signature verification failed.", "error");
+            }
+          },
+          prefill: {
+            name: billingDetailsForm.name,
+            email: billingDetailsForm.email,
+            contact: billingDetailsForm.phone || "",
+          },
+          theme: {
+            color: "#3b82f6",
+          },
+          modal: {
+            ondismiss: function () {
+              setCheckoutStep("failed");
+              triggerToast("Payment checkout cancelled by user.", "warning");
+            },
+          },
+        };
+
+        const rzp = new (window as any).Razorpay(options);
+        rzp.on("payment.failed", function (response: any) {
+          setCheckoutStep("failed");
+          triggerToast(response.error.description || "Razorpay payment attempt failed.", "error");
+        });
+        rzp.open();
+      } catch (err: any) {
+        setCheckoutStep("failed");
+        triggerToast(err.message || "Failed to initiate Razorpay transaction.", "error");
+      }
       return;
     } else {
       // Default / Stripe payment flow -> bypass /api/checkout completely and sync with Supabase

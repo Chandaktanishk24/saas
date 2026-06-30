@@ -1,0 +1,172 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model User {
+  id           String        @id @default(uuid())
+  email        String        @unique
+  password     String // Hashed password
+  name         String
+  role         String        @default("CLIENT") // "CLIENT" or "ADMIN"
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  bookings     Booking[]
+  orders       Order[]
+  payments     Payment[]
+  tickets      SupportTicket[]
+  logs         ActivityLog[]
+}
+
+model Booking {
+  id                 String   @id @default(uuid())
+  date               String // YYYY-MM-DD
+  time               String // HH:MM
+  timezone           String
+  name               String
+  email              String
+  phone              String
+  company            String?
+  serviceRequired    String
+  budget             String?
+  projectDescription String?
+  status             String   @default("PENDING") // "PENDING", "CONFIRMED", "CANCELLED", "RESCHEDULED"
+  calendarEventId    String?
+  meetLink           String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  user               User?    @relation(fields: [userId], references: [id])
+  userId             String?
+}
+
+model Order {
+  id              String    @id @default(uuid())
+  planName        String // "Starter", "Growth", "Enterprise"
+  amount          Float
+  status          String    @default("PENDING") // "PENDING", "COMPLETED", "FAILED"
+  couponCode      String?
+  billingName     String
+  billingEmail    String
+  billingAddress  String?
+  gstNumber       String?
+  razorpayOrderId String?   @unique
+  invoiceId       String?   @unique
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  user            User?     @relation(fields: [userId], references: [id])
+  userId          String?
+  invoice         Invoice?
+}
+
+model Payment {
+  id                String   @id @default(uuid())
+  razorpayPaymentId String   @unique
+  razorpayOrderId   String
+  razorpaySignature String?
+  amount            Float
+  currency          String   @default("INR")
+  status            String // "captured", "failed", "refunded"
+  paymentMethod     String   @default("Razorpay")
+  createdAt         DateTime @default(now())
+  user              User?    @relation(fields: [userId], references: [id])
+  userId            String?
+}
+
+model Invoice {
+  id             String   @id @default(uuid())
+  invoiceNumber  String   @unique
+  invoiceDate    String
+  originalAmount Float
+  discount       Float
+  netAmount      Float
+  gstAmount      Float
+  totalAmount    Float
+  status         String   @default("PAID") // "PAID", "UNPAID", "VOID"
+  downloadUrl    String?
+  createdAt      DateTime @default(now())
+  order          Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderId        String   @unique
+}
+
+model Service {
+  id          String   @id @default(uuid())
+  name        String
+  description String
+  category    String
+  price       String
+  icon        String
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+}
+
+model Testimonial {
+  id            String   @id @default(uuid())
+  clientName    String
+  clientRole    String
+  clientCompany String
+  content       String
+  rating        Int      @default(5)
+  avatar        String?
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+}
+
+model Message {
+  id          String   @id @default(uuid())
+  senderName  String
+  senderEmail String
+  content     String
+  status      String   @default("UNREAD") // "UNREAD", "READ"
+  createdAt   DateTime @default(now())
+}
+
+model Newsletter {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+}
+
+model Project {
+  id             String   @id @default(uuid())
+  title          String
+  description    String
+  technology     String // Comma separated or specific details
+  services       String // Comma separated or specific details
+  timeline       String
+  clientFeedback String?
+  liveDemo       String?
+  images         String // Comma-separated image URLs
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+}
+
+model SupportTicket {
+  id          String   @id @default(uuid())
+  title       String
+  description String
+  category    String
+  priority    String   @default("MEDIUM") // "LOW", "MEDIUM", "HIGH"
+  status      String   @default("OPEN") // "OPEN", "IN_PROGRESS", "RESOLVED", "CLOSED"
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      String
+}
+
+model ActivityLog {
+  id        String   @id @default(uuid())
+  action    String
+  details   String?
+  ipAddress String?
+  createdAt DateTime @default(now())
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userId    String?
+}

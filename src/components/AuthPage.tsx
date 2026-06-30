@@ -133,7 +133,12 @@ export default function AuthPage({ onAuthSuccess, onClose }: AuthPageProps) {
         onAuthSuccess(userProfile, token);
       }
     } catch (err: any) {
-      setErrorMsg(err.message || "An unexpected error occurred.");
+      const errMsg = err.message || "";
+      if (errMsg.toLowerCase().includes("rate limit") || errMsg.toLowerCase().includes("rate_limit") || errMsg.toLowerCase().includes("limit exceeded")) {
+        setErrorMsg("Signup rate limit exceeded (Supabase allows a maximum of 3 signups per hour per IP). If you have already registered, please switch to the 'Login' tab to access your account instantly. Otherwise, please try again shortly.");
+      } else {
+        setErrorMsg(errMsg || "An unexpected error occurred.");
+      }
     } finally {
       setLoading(false);
     }
@@ -295,13 +300,33 @@ export default function AuthPage({ onAuthSuccess, onClose }: AuthPageProps) {
                     return;
                   }
                   try {
-                    const { error } = await supabase.auth.signInWithOAuth({
+                    const redirectUrl = `${window.location.origin}/api/supabase-callback`;
+                    const { data, error } = await supabase.auth.signInWithOAuth({
                       provider: "google",
                       options: {
-                        redirectTo: window.location.origin,
+                        redirectTo: redirectUrl,
+                        skipBrowserRedirect: true,
+                        scopes: "email profile",
                       },
                     });
                     if (error) throw error;
+
+                    if (data?.url) {
+                      const authWindow = window.open(
+                        data.url,
+                        "supabase_google_oauth",
+                        "width=600,height=700"
+                      );
+                      if (!authWindow) {
+                        setErrorMsg("Popup blocked. Please allow popups for this site to log in with Google.");
+                        setLoading(false);
+                      } else {
+                        // The active view remains Auth but waiting for postMessage
+                        setLoading(false);
+                      }
+                    } else {
+                      throw new Error("Failed to retrieve Google authentication URL.");
+                    }
                   } catch (err: any) {
                     setErrorMsg(err.message || "An unexpected error occurred during Google Sign-In.");
                     setLoading(false);
