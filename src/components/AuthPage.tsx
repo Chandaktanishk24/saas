@@ -301,32 +301,14 @@ export default function AuthPage({ onAuthSuccess, onClose }: AuthPageProps) {
                     return;
                   }
                   try {
-                    const { data, error } = await supabase.auth.signInWithOAuth({
+                    const { error } = await supabase.auth.signInWithOAuth({
                       provider: "google",
                       options: {
                         redirectTo: window.location.origin,
-                        skipBrowserRedirect: true,
                         scopes: "email profile",
                       },
                     });
                     if (error) throw error;
-
-                    if (data?.url) {
-                      const authWindow = window.open(
-                        data.url,
-                        "supabase_google_oauth",
-                        "width=600,height=700"
-                      );
-                      if (!authWindow) {
-                        setErrorMsg("Popup blocked. Please allow popups for this site to log in with Google.");
-                        setLoading(false);
-                      } else {
-                        // The active view remains Auth but waiting for postMessage
-                        setLoading(false);
-                      }
-                    } else {
-                      throw new Error("Failed to retrieve Google authentication URL.");
-                    }
                   } catch (err: any) {
                     setErrorMsg(err.message || "An unexpected error occurred during Google Sign-In.");
                     setLoading(false);

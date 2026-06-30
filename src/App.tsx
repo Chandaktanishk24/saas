@@ -277,68 +277,7 @@ export default function App() {
   useEffect(() => {
     if (!isSupabaseConfigured()) return;
 
-    // Check if we are inside a popup window opened for Google OAuth
-    if (window.opener && window.opener !== window) {
-      const urlParams = new URLSearchParams(window.location.search);
-      const codeParam = urlParams.get('code');
-      if (codeParam || window.location.hash.includes('access_token')) {
-        try {
-          window.opener.postMessage({
-            type: 'SUPABASE_OAUTH_SUCCESS',
-            search: window.location.search,
-            hash: window.location.hash
-          }, window.location.origin);
-          setTimeout(() => {
-            window.close();
-          }, 300);
-        } catch (e) {
-          console.error("Failed to pass auth code to main window:", e);
-        }
-        return;
-      }
-    }
-
-    // Exchange PKCE/Verification code in current URL for active session
-    const urlParams = new URLSearchParams(window.location.search);
-    const codeParam = urlParams.get('code');
-    if (codeParam) {
-      const cleanUrl = window.location.pathname + window.location.hash;
-      window.history.replaceState({}, document.title, cleanUrl || "/");
-
-      supabase.auth.exchangeCodeForSession(codeParam).then(({ data, error }) => {
-        if (error) {
-          console.error("Failed to exchange mount code for session:", error);
-          triggerToast(error.message || "Failed to confirm email/login code.", "error");
-        } else if (data?.session) {
-          const session = data.session;
-          const defaultRole = session.user.email === "tanishkchandak45@gmail.com" || session.user.email === "tanishktanishkchandak45@gmail.com" || session.user.email?.includes("admin") ? "ADMIN" : "CLIENT";
-          const userProfile = {
-            id: session.user.id,
-            name: session.user.user_metadata?.full_name || session.user.email || "",
-            email: session.user.email || "",
-            role: session.user.user_metadata?.role || defaultRole,
-          };
-          setUser(userProfile);
-          setToken(session.access_token);
-          localStorage.setItem("veloce_user", JSON.stringify(userProfile));
-          localStorage.setItem("veloce_token", session.access_token);
-
-          // Register user profile in DB
-          supabase.from("users").upsert({
-            id: session.user.id,
-            full_name: userProfile.name,
-            email: userProfile.email,
-          }).then(({ error: dbErr }) => {
-            if (dbErr) console.warn("Failed to register verified user profile:", dbErr);
-          });
-
-          setActiveView(userProfile.role === "ADMIN" ? "admin" : "client");
-          triggerToast("Authentication and login completed successfully!", "success");
-        }
-      });
-    }
-
-    // Check current active session
+    // Check current active session on startup to restore login state automatically
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session && session.user) {
         const defaultRole = session.user.email === "tanishkchandak45@gmail.com" || session.user.email === "tanishktanishkchandak45@gmail.com" || session.user.email?.includes("admin") ? "ADMIN" : "CLIENT";
@@ -352,6 +291,9 @@ export default function App() {
         setToken(session.access_token);
         localStorage.setItem("veloce_user", JSON.stringify(userProfile));
         localStorage.setItem("veloce_token", session.access_token);
+
+        // Auto-navigate to dashboard on successful session restoration
+        setActiveView(userProfile.role === "ADMIN" ? "admin" : "client");
       }
     });
 
@@ -369,68 +311,30 @@ export default function App() {
         setToken(session.access_token);
         localStorage.setItem("veloce_user", JSON.stringify(userProfile));
         localStorage.setItem("veloce_token", session.access_token);
+
+        // Upsert user details into public.users to keep database records synchronized
+        supabase.from("users").upsert({
+          id: session.user.id,
+          full_name: userProfile.name,
+          email: userProfile.email,
+        }).then(({ error: dbErr }) => {
+          if (dbErr) console.warn("[AuthSync] Failed to register user profile:", dbErr);
+        });
+
+        if (event === "SIGNED_IN") {
+          setActiveView(userProfile.role === "ADMIN" ? "admin" : "client");
+        }
       } else if (event === "SIGNED_OUT") {
         setUser(null);
         setToken(null);
         localStorage.removeItem("veloce_user");
         localStorage.removeItem("veloce_token");
+        setActiveView("landing");
       }
     });
 
-    // Google OAuth listener for Popup-based logins
-    const handleOAuthMessage = async (event: MessageEvent) => {
-      const origin = event.origin;
-      if (origin !== window.location.origin && !origin.endsWith('.run.app') && !origin.includes('localhost') && !origin.endsWith('.vercel.app')) {
-        return;
-      }
-      if (event.data?.type === 'SUPABASE_OAUTH_SUCCESS') {
-        const { search } = event.data;
-        const searchParams = new URLSearchParams(search);
-        const code = searchParams.get('code');
-        if (code) {
-          try {
-            const { data, error } = await supabase.auth.exchangeCodeForSession(code);
-            if (error) throw error;
-            if (data?.session) {
-              const session = data.session;
-              const defaultRole = session.user.email === "tanishkchandak45@gmail.com" || session.user.email === "tanishktanishkchandak45@gmail.com" || session.user.email?.includes("admin") ? "ADMIN" : "CLIENT";
-              const userProfile = {
-                id: session.user.id,
-                name: session.user.user_metadata?.full_name || session.user.email || "",
-                email: session.user.email || "",
-                role: session.user.user_metadata?.role || defaultRole,
-              };
-              setUser(userProfile);
-              setToken(session.access_token);
-              localStorage.setItem("veloce_user", JSON.stringify(userProfile));
-              localStorage.setItem("veloce_token", session.access_token);
-              
-              // Upsert details to public.users table
-              try {
-                await supabase.from("users").upsert({
-                  id: session.user.id,
-                  full_name: userProfile.name,
-                  email: userProfile.email,
-                });
-              } catch (dbErr) {
-                console.warn("[AuthPage] Failed to register user profile into users table:", dbErr);
-              }
-              
-              setActiveView(userProfile.role === "ADMIN" ? "admin" : "client");
-              triggerToast(`Welcome, ${userProfile.name}! Logged in with Google successfully.`, "success");
-            }
-          } catch (err: any) {
-            console.error("Failed to exchange code for session:", err);
-            triggerToast(err.message || "Failed to exchange Google credentials.", "error");
-          }
-        }
-      }
-    };
-    window.addEventListener('message', handleOAuthMessage);
-
     return () => {
       subscription.unsubscribe();
-      window.removeEventListener('message', handleOAuthMessage);
     };
   }, []);
 
