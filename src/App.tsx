@@ -277,6 +277,67 @@ export default function App() {
   useEffect(() => {
     if (!isSupabaseConfigured()) return;
 
+    // Check if we are inside a popup window opened for Google OAuth
+    if (window.opener && window.opener !== window) {
+      const urlParams = new URLSearchParams(window.location.search);
+      const codeParam = urlParams.get('code');
+      if (codeParam || window.location.hash.includes('access_token')) {
+        try {
+          window.opener.postMessage({
+            type: 'SUPABASE_OAUTH_SUCCESS',
+            search: window.location.search,
+            hash: window.location.hash
+          }, window.location.origin);
+          setTimeout(() => {
+            window.close();
+          }, 300);
+        } catch (e) {
+          console.error("Failed to pass auth code to main window:", e);
+        }
+        return;
+      }
+    }
+
+    // Exchange PKCE/Verification code in current URL for active session
+    const urlParams = new URLSearchParams(window.location.search);
+    const codeParam = urlParams.get('code');
+    if (codeParam) {
+      const cleanUrl = window.location.pathname + window.location.hash;
+      window.history.replaceState({}, document.title, cleanUrl || "/");
+
+      supabase.auth.exchangeCodeForSession(codeParam).then(({ data, error }) => {
+        if (error) {
+          console.error("Failed to exchange mount code for session:", error);
+          triggerToast(error.message || "Failed to confirm email/login code.", "error");
+        } else if (data?.session) {
+          const session = data.session;
+          const defaultRole = session.user.email === "tanishkchandak45@gmail.com" || session.user.email === "tanishktanishkchandak45@gmail.com" || session.user.email?.includes("admin") ? "ADMIN" : "CLIENT";
+          const userProfile = {
+            id: session.user.id,
+            name: session.user.user_metadata?.full_name || session.user.email || "",
+            email: session.user.email || "",
+            role: session.user.user_metadata?.role || defaultRole,
+          };
+          setUser(userProfile);
+          setToken(session.access_token);
+          localStorage.setItem("veloce_user", JSON.stringify(userProfile));
+          localStorage.setItem("veloce_token", session.access_token);
+
+          // Register user profile in DB
+          supabase.from("users").upsert({
+            id: session.user.id,
+            full_name: userProfile.name,
+            email: userProfile.email,
+          }).then(({ error: dbErr }) => {
+            if (dbErr) console.warn("Failed to register verified user profile:", dbErr);
+          });
+
+          setActiveView(userProfile.role === "ADMIN" ? "admin" : "client");
+          triggerToast("Authentication and login completed successfully!", "success");
+        }
+      });
+    }
+
     // Check current active session
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session && session.user) {
@@ -319,7 +380,7 @@ export default function App() {
     // Google OAuth listener for Popup-based logins
     const handleOAuthMessage = async (event: MessageEvent) => {
       const origin = event.origin;
-      if (!origin.endsWith('.run.app') && !origin.includes('localhost')) {
+      if (origin !== window.location.origin && !origin.endsWith('.run.app') && !origin.includes('localhost') && !origin.endsWith('.vercel.app')) {
         return;
       }
       if (event.data?.type === 'SUPABASE_OAUTH_SUCCESS') {
@@ -575,6 +636,20 @@ export default function App() {
       // If Supabase is configured, attempt direct client-side insertion first
       if (isSupabaseConfigured()) {
         try {
+          // Check for duplicate bookings
+          const { data: duplicateBookings, error: duplicateCheckErr } = await supabase
+            .from("bookings")
+            .select("id")
+            .eq("meeting_date", bookingPayload.date)
+            .eq("meeting_time", bookingPayload.time)
+            .neq("booking_status", "Cancelled")
+            .limit(1);
+
+          if (!duplicateCheckErr && duplicateBookings && duplicateBookings.length > 0) {
+            triggerToast("This slot (date and time) is already booked. Please choose another time slot.", "error");
+            return;
+          }
+
           console.log("[Supabase Client] Syncing user context...");
           let supabaseUserId = null;
 
@@ -1193,7 +1268,7 @@ export default function App() {
           modal: {
             ondismiss: function () {
               setCheckoutStep("failed");
-              triggerToast("Payment checkout cancelled by user.", "warning");
+              triggerToast("Payment checkout cancelled by user.", "info");
             },
           },
         };
@@ -3028,9 +3103,9 @@ export default function App() {
               An elite, multi-disciplinary SaaS studio crafting high-end, secure digital systems, and automated pipelines inspired by Apple and Vercel structures.
             </p>
             <div className="flex items-center gap-4 text-gray-500">
-              <a href="#" className="hover:text-white transition"><Icon name="Mail" size={16} /></a>
-              <a href="#" className="hover:text-white transition"><Icon name="Phone" size={16} /></a>
-              <a href="#" className="hover:text-white transition"><Icon name="MapPin" size={16} /></a>
+              <a href="mailto:tanishkchandak45@gmail.com" className="hover:text-white transition" title="Email Us"><Icon name="Mail" size={16} /></a>
+              <a href="tel:+919649424045" className="hover:text-white transition" title="Call Us"><Icon name="Phone" size={16} /></a>
+              <a href="https://maps.google.com/?q=Veloce+AI" target="_blank" rel="noopener noreferrer" className="hover:text-white transition" title="Our Location"><Icon name="MapPin" size={16} /></a>
             </div>
           </div>
 
@@ -3059,9 +3134,9 @@ export default function App() {
           <div>
             <h5 className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-4">Legal</h5>
             <ul className="space-y-2.5 text-xs text-gray-500">
-              <li><a href="#" className="hover:text-white transition">Privacy Guidelines</a></li>
-              <li><a href="#" className="hover:text-white transition">Terms of Service</a></li>
-              <li><a href="#" className="hover:text-white transition">Cookie Preferences</a></li>
+              <li><a href="#legal" onClick={(e) => { e.preventDefault(); triggerToast("Bespoke privacy and compliance policies apply under NDA to all our active agency clients.", "info"); }} className="hover:text-white transition">Privacy Guidelines</a></li>
+              <li><a href="#legal" onClick={(e) => { e.preventDefault(); triggerToast("Our corporate master services agreement (MSA) governs all custom development sprints.", "info"); }} className="hover:text-white transition">Terms of Service</a></li>
+              <li><button onClick={() => { setCookieConsent(false); triggerToast("Cookie preferences loaded.", "info"); }} className="hover:text-white transition bg-transparent border-none p-0 cursor-pointer text-left text-xs text-gray-500 hover:underline">Cookie Preferences</button></li>
               <li><span className="text-[10px] text-green-500 bg-green-500/10 px-1.5 py-0.5 rounded">All Tunnels Secure</span></li>
             </ul>
           </div>

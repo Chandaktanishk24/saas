@@ -53,6 +53,7 @@ export default function AuthPage({ onAuthSuccess, onClose }: AuthPageProps) {
           email,
           password,
           options: {
+            emailRedirectTo: window.location.origin,
             data: {
               full_name: name,
               role: defaultRole,
@@ -300,7 +301,7 @@ export default function AuthPage({ onAuthSuccess, onClose }: AuthPageProps) {
                     return;
                   }
                   try {
-                    const redirectUrl = `${window.location.origin}/api/supabase-callback`;
+                    const redirectUrl = window.location.origin;
                     const { data, error } = await supabase.auth.signInWithOAuth({
                       provider: "google",
                       options: {
