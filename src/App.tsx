@@ -704,6 +704,7 @@ export default function App() {
                 date: bookingPayload.date,
                 time: bookingPayload.time,
                 timezone: bookingPayload.timezone,
+                duration: 45,
                 serviceRequired: bookingPayload.serviceRequired,
                 notes: bookingPayload.projectDescription,
               }),
@@ -2131,11 +2132,11 @@ export default function App() {
                           className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-blue-500 focus:bg-white/10"
                         >
                           <option value="" className="bg-[#0B1220]">Select Time</option>
-                          <option value="10:00 AM IST" className="bg-[#0B1220]">10:00 AM IST</option>
-                          <option value="11:30 AM IST" className="bg-[#0B1220]">11:30 AM IST</option>
-                          <option value="02:00 PM IST" className="bg-[#0B1220]">02:00 PM IST</option>
-                          <option value="04:30 PM IST" className="bg-[#0B1220]">04:30 PM IST</option>
-                          <option value="06:00 PM IST" className="bg-[#0B1220]">06:00 PM IST</option>
+                          <option value="10:00 AM" className="bg-[#0B1220]">10:00 AM IST</option>
+                          <option value="11:30 AM" className="bg-[#0B1220]">11:30 AM IST</option>
+                          <option value="02:00 PM" className="bg-[#0B1220]">02:00 PM IST</option>
+                          <option value="04:30 PM" className="bg-[#0B1220]">04:30 PM IST</option>
+                          <option value="06:00 PM" className="bg-[#0B1220]">06:00 PM IST</option>
                         </select>
                       </div>
                     </div>
