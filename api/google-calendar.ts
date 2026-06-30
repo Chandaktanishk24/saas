@@ -212,52 +212,48 @@ export default async function handler(req: any, res: any) {
       });
     }
 
-    // Extract YYYY-MM-DD format safely
-    const datePart = dateVal.dateObj!.toISOString().slice(0, 10);
-    const startIsoStr = `${datePart}T${timeVal.hour!.toString().padStart(2, "0")}:${timeVal.minute!.toString().padStart(2, "0")}:00Z`;
+    // Apply the parsed hour and minute directly to the Date object using setHours()
+    const startDate = new Date(dateVal.dateObj!);
+    startDate.setHours(timeVal.hour!, timeVal.minute!, 0, 0);
 
-    // Try creating start Date object safely
-    const tempStart = new Date(startIsoStr);
-    const parsedTimestamp = tempStart.getTime();
-
-    // Log the parsed objects
-    console.log("[Google Calendar Debug] Parsed Date Object:", tempStart.toString());
-    console.log("[Google Calendar Debug] Parsed Timestamp:", parsedTimestamp);
-    console.log("[Google Calendar Debug] Constructed ISO string (UTC):", startIsoStr);
-
-    if (isNaN(parsedTimestamp)) {
-      console.error("[Google Calendar API] Combined start date-time is invalid:", startIsoStr);
+    // Validate that the Date object is valid
+    if (isNaN(startDate.getTime())) {
+      console.error("[Google Calendar API] Invalid booking date after setHours");
       return res.status(400).json({
         success: false,
-        error: "Invalid combined start date-time value.",
-        receivedData: { date, time, timezone, duration, constructedIsoStr: startIsoStr },
+        error: "Invalid booking date",
+        receivedData: { date, time, timezone, duration },
         rawPayload: body
       });
     }
 
-    // Try creating end Date object safely
-    const tempEnd = new Date(parsedTimestamp + durationVal.durationMinutes! * 60 * 1000);
-    if (isNaN(tempEnd.getTime())) {
-      console.error("[Google Calendar API] Combined end date-time calculation is invalid.");
+    // Calculate end date based on duration minutes
+    const endDate = new Date(startDate.getTime() + durationVal.durationMinutes! * 60 * 1000);
+    if (isNaN(endDate.getTime())) {
+      console.error("[Google Calendar API] Invalid booking end date calculation");
       return res.status(400).json({
         success: false,
-        error: "Invalid combined end date-time calculation.",
-        receivedData: { date, time, timezone, duration: durationVal.durationMinutes },
+        error: "Invalid booking end date",
+        receivedData: { date, time, timezone, duration },
         rawPayload: body
       });
     }
 
-    // Format safely to local RFC3339 strings (stripped of 'Z' so Google Calendar uses local 'timeZone: zone')
-    const startDateTimeISO = tempStart.toISOString().replace(/\.000Z$/, "").replace("Z", "");
-    const endDateTimeISO = tempEnd.toISOString().replace(/\.000Z$/, "").replace("Z", "");
-
-    console.log("[Google Calendar Debug] Final startDateTimeISO:", startDateTimeISO);
-    console.log("[Google Calendar Debug] Final endDateTimeISO:", endDateTimeISO);
-    console.log("[Google Calendar Debug] Final Google Calendar payload start/end:", {
-      start: { dateTime: startDateTimeISO, timeZone: zoneVal.zone },
-      end: { dateTime: endDateTimeISO, timeZone: zoneVal.zone }
+    // Add console logs immediately before the Google Calendar API call showing:
+    console.log({
+      bookingDate: date,
+      bookingTime: time,
+      timezone,
+      parsedStart: startDate,
+      parsedEnd: endDate,
+      startISO: startDate.toISOString(),
+      endISO: endDate.toISOString()
     });
+
     console.log("[Google Calendar Debug] === END INCOMING REQUEST AUDIT ===");
+
+    const startDateTimeISO = startDate.toISOString();
+    const endDateTimeISO = endDate.toISOString();
 
     const clientId = process.env.GOOGLE_CLIENT_ID || "";
     const clientSecret = process.env.GOOGLE_CLIENT_SECRET || "";
