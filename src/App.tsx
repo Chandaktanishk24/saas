@@ -599,6 +599,7 @@ export default function App() {
           let calendarEventId = null;
           let meetingLink = null;
           try {
+            console.log("Calling Google Calendar...");
             const calRes = await fetch("/api/google-calendar", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -614,10 +615,10 @@ export default function App() {
               }),
             });
             if (calRes.ok) {
+              console.log("Google Calendar Success");
               const calData = await calRes.json();
               calendarEventId = calData.eventId;
               meetingLink = calData.meetLink;
-              console.log("[Google Calendar] Scheduled successfully:", calData);
 
               // 3. Immediately after a successful calendar creation, call: POST /api/send-email
               const emailPayload = {
@@ -640,7 +641,7 @@ export default function App() {
                 }
               };
 
-              console.log("[Email Service] BEFORE calling /api/send-email with payload:", emailPayload);
+              console.log("Calling send-email...");
 
               try {
                 const emailRes = await fetch("/api/send-email", {
@@ -651,13 +652,14 @@ export default function App() {
 
                 if (emailRes.ok) {
                   const emailData = await emailRes.json();
-                  console.log("[Email Service] AFTER successful response from /api/send-email:", emailData);
+                  console.log("Send-email Success");
+                  console.log("Booking Completed");
                 } else {
                   const errorText = await emailRes.text();
-                  console.error("[Email Service] ON failure calling /api/send-email (Non-OK status response):", errorText);
+                  console.error("Send-email failed with status " + emailRes.status + ": " + errorText);
                 }
-              } catch (emailErr) {
-                console.error("[Email Service] ON failure calling /api/send-email (Exception):", emailErr);
+              } catch (emailErr: any) {
+                console.error("Send-email failed with exception:", emailErr);
               }
 
               // Also trigger Admin notice email immediately
