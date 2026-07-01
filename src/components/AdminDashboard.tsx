@@ -252,6 +252,10 @@ export default function AdminDashboard({ user, token, onLogout, triggerToast }: 
         // 6. Fetch Newsletters Count
         try {
           const { count, error } = await supabase.from("newsletters").select("*", { count: "exact", head: true });
+          if (error) {
+            console.error(error);
+            console.log(JSON.stringify(error, null, 2));
+          }
           if (!error && count !== null) {
             newsletterCount = count;
           }

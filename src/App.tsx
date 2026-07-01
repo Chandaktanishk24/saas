@@ -498,10 +498,12 @@ export default function App() {
           { onConflict: 'email' }
         );
         if (error) {
+          console.error(error);
+          console.log(JSON.stringify(error, null, 2));
           if (error.message && error.message.toLowerCase().includes("could not find the table")) {
             throw new Error(
               "The 'newsletters' table is missing in your Supabase database. " +
-              "Please make sure to run the SQL migrations located in your supabase/migrations folder using your Supabase SQL Editor."
+              "Please make sure to run the SQL migrations located in your supabase/migrations folder using your Supabase SQL Editor. Actual Supabase Error: " + error.message
             );
           }
           throw error;
