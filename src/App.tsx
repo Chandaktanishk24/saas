@@ -498,12 +498,11 @@ export default function App() {
           { onConflict: 'email' }
         );
         if (error) {
-          console.error(error);
+          console.error("[Newsletter Subscription Error] Failed to subscribe:", error);
           console.log(JSON.stringify(error, null, 2));
           if (error.message && error.message.toLowerCase().includes("could not find the table")) {
             throw new Error(
-              "The 'newsletters' table is missing in your Supabase database. " +
-              "Please make sure to run the SQL migrations located in your supabase/migrations folder using your Supabase SQL Editor. Actual Supabase Error: " + error.message
+              "Our newsletter subscription service is temporarily undergoing scheduled maintenance. Please try again in a few minutes! (Error: 'newsletters' table is not created in Supabase)"
             );
           }
           throw error;
@@ -512,7 +511,7 @@ export default function App() {
       setNewsletterSuccess(true);
       triggerToast("Welcome to our insights briefing!", "success");
     } catch (err: any) {
-      triggerToast(err.message || "An error occurred.", "error");
+      triggerToast(err.message || "An error occurred during subscription.", "error");
     }
   };
 
