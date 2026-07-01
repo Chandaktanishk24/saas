@@ -267,6 +267,36 @@ export default async function handler(req: any, res: any) {
           ${brandingFooter}
         </div>
       `;
+    } else if (type === "newsletter_welcome") {
+      subject = "📰 Welcome to the Veloce AI Insights Briefing!";
+      htmlContent = `
+        <div style="${containerStyle}">
+          ${brandingHeader}
+          <div style="padding: 30px; font-family: sans-serif; color: #1e293b; line-height: 1.6;">
+            <h2 style="font-size: 20px; color: #0f172a; margin-top: 0;">Welcome to Veloce AI Insights!</h2>
+            <p>Thank you for subscribing to our weekly newsletter. You are now part of an exclusive group of innovators, developers, and strategic thinkers.</p>
+            
+            <p>Every week, we curate high-value resources, actionable guides, and industry analyses directly to your inbox. Here is what you can expect:</p>
+            
+            <div style="background-color: #f8fafc; border-left: 4px solid #3b82f6; padding: 16px; border-radius: 8px; margin: 24px 0;">
+              <ul style="margin: 0; padding-left: 20px; font-size: 14px; color: #475569;">
+                <li style="margin-bottom: 8px;"><strong>Strategic Audits:</strong> Deep dives into AI agent workflows and modern systems design.</li>
+                <li style="margin-bottom: 8px;"><strong>Tech Stack Spotlights:</strong> Analysis of high-performance frameworks and developer productivity multipliers.</li>
+                <li style="margin-bottom: 8px;"><strong>Early Access:</strong> Priority releases of our products, open-source utilities, and beta tools.</li>
+              </ul>
+            </div>
+
+            <p>If you're ready to accelerate your technical delivery right away, explore our current subscription models or schedule a Discovery Consultation in our Client Dashboard.</p>
+            
+            <div style="text-align: center; margin-top: 30px;">
+              <a href="https://veloce.ai/dashboard" style="background-color: #3b82f6; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 14px; display: inline-block;">
+                Explore Veloce Dashboard
+              </a>
+            </div>
+          </div>
+          ${brandingFooter}
+        </div>
+      `;
     }
 
     let { data: resendResult, error: resendError } = await resend.emails.send({

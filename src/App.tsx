@@ -508,6 +508,33 @@ export default function App() {
           throw error;
         }
       }
+      
+      console.log("[Newsletter] Saved to database");
+      console.log("[Newsletter] Calling send-email API");
+
+      try {
+        const mailRes = await fetch("/api/send-email", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            type: "newsletter_welcome",
+            email: newsletterEmail,
+            name: newsletterEmail
+          })
+        });
+
+        if (mailRes.ok) {
+          console.log("[Newsletter] Welcome email sent");
+        } else {
+          const errText = await mailRes.text();
+          console.error("[Newsletter] Email failed", new Error(`Status ${mailRes.status}: ${errText}`));
+        }
+      } catch (mailErr) {
+        console.error("[Newsletter] Email failed", mailErr);
+      }
+
       setNewsletterSuccess(true);
       triggerToast("Welcome to our insights briefing!", "success");
     } catch (err: any) {
